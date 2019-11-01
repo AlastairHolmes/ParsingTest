@@ -119,10 +119,122 @@ namespace traits
 
 }
 
+//----------------------------//
+
 struct null_attribute {};
 
 template <typename AttributeType>
 inline constexpr bool is_null_attribute_v = std::is_same_v<AttributeType, null_attribute>;
+
+//----------------------------//
+
+template <typename AttributeType1, typename AttributeType2>
+struct join_attributes
+{
+	using type = std::tuple<AttributeType1, AttributeType2>;
+	static type join(AttributeType1&& p_attribute1, AttributeType2&& p_attribute2)
+	{
+		return std::make_tuple(std::move(p_attribute1), std::move(p_attribute2));
+	}
+};
+
+template <typename AttributeType2>
+struct join_attributes<null_attribute, AttributeType2>
+{
+	using type = AttributeType2;
+	static type join(null_attribute&& p_attribute1, AttributeType2&& p_attribute2)
+	{
+		return std::move(p_attribute2);
+	}
+};
+
+template <typename AttributeType1>
+struct join_attributes<AttributeType1, null_attribute>
+{
+	using type = AttributeType1;
+	static type join(AttributeType1&& p_attribute1, null_attribute&& p_attribute2)
+	{
+		return std::move(p_attribute1);
+	}
+};
+
+template <typename AttributeType1, typename... AttributeTypes2>
+struct join_attributes<AttributeType1, std::tuple<AttributeTypes2...>>
+{
+	using type = std::tuple<AttributeType1, AttributeTypes2...>;
+	static type join(AttributeType1&& p_attribute1, std::tuple<AttributeTypes2...>&& p_attribute2)
+	{
+		return std::tuple_cat(std::make_tuple(std::move(p_attribute1)), std::move(p_attribute2));
+	}
+};
+
+template <typename... AttributeTypes1, typename AttributeType2>
+struct join_attributes<std::tuple<AttributeTypes1...>, AttributeType2>
+{
+	using type = std::tuple<AttributeTypes1..., AttributeType2>;
+	static type join(std::tuple<AttributeTypes1...>&& p_attribute1, AttributeType2&& p_attribute2)
+	{
+		return std::tuple_cat(std::move(p_attribute1), std::make_tuple(std::move(p_attribute2)));
+	}
+};
+
+template <typename... AttributeTypes1, typename... AttributeTypes2>
+struct join_attributes<std::tuple<AttributeTypes1...>, std::tuple<AttributeTypes2...>>
+{
+	using type = std::tuple<AttributeTypes1..., AttributeTypes2...>;
+
+	static type join(std::tuple<AttributeTypes1...>&& p_attribute1, std::tuple<AttributeTypes2...>&& p_attribute2)
+	{
+		return std::tuple_cat(std::move(p_attribute1), std::move(p_attribute2));
+	}
+};
+
+//----------------------------//
+
+template <template<typename> typename AttributeTemplate>
+class recursive_attribute
+{
+public:
+	recursive_attribute(AttributeTemplate<recursive_attribute<AttributeTemplate>>&& p_attribute)
+		: attribute(std::make_unique<AttributeTemplate<recursive_attribute<AttributeTemplate>>>(std::move(p_attribute)))
+	{}
+
+	std::unique_ptr<AttributeTemplate<recursive_attribute<AttributeTemplate>>> attribute;
+};
+
+template<typename RootRuleType>
+using recursive_type = recursive_attribute<typename RootRuleType::template attribute_template>;
+
+template<template <typename> typename AttributeTemplate, typename RootRuleType>
+using attribute_type = AttributeTemplate<recursive_type<RootRuleType>>;
+
+template <typename RootRuleType>
+class recursive_rule_instance
+{
+public:
+	static_assert(!std::is_reference_v<RootRuleType>);
+	recursive_rule_instance(const RootRuleType&) {}
+
+	template <typename RecursiveAttributeType>
+	using attribute_template = RecursiveAttributeType;
+
+	template <typename IteratorType, typename SentinelType>
+	auto parse(const RootRuleType& p_root, const IteratorType& p_iterator, const SentinelType& p_sentinel) const
+	{
+		auto optpairitattr = p_root.parse(p_root, p_iterator, p_sentinel);
+		return optpairitattr.has_value() ?
+			std::make_optional(std::make_pair(optpairitattr.value().first, recursive_attribute<typename RootRuleType::template attribute_template>(std::move(optpairitattr.value().second)))) :
+			std::nullopt;
+	}
+};
+
+inline constexpr auto recurse_rule = []()
+{
+	return [](const auto& p_ruleRoot)
+	{
+		return recursive_rule_instance<std::decay_t<decltype(p_ruleRoot)>>(p_ruleRoot);
+	};
+};
 
 //----------------------------//
 
@@ -235,99 +347,18 @@ inline constexpr auto alternative_rule = [](auto&& p_ruledefAlt1, auto&& p_ruled
 template <typename RootRuleType, typename HeadRuleDefinitionType, typename TailRuleDefinitionType>
 class sequence_rule_instance
 {
-	template <typename AttributeType1, typename AttributeType2>
-	struct join_attribute_types
-	{
-		using type = std::tuple<AttributeType1, AttributeType2>;
-
-		static type Create(
-			AttributeType1&& p_attribute1,
-			AttributeType2&& p_attribute2
-		)
-		{
-			return std::make_tuple(std::move(p_attribute1), std::move(p_attribute2));
-		}
-	};
-
-	template <typename AttributeType2>
-	struct join_attribute_types<null_attribute, AttributeType2>
-	{
-		using type = AttributeType2;
-
-		static type Create(
-			null_attribute&& p_attribute1,
-			AttributeType2&& p_attribute2
-		)
-		{
-			return std::move(p_attribute2);
-		}
-	};
-
-	template <typename AttributeType1>
-	struct join_attribute_types<AttributeType1, null_attribute>
-	{
-		using type = AttributeType1;
-
-		static type Create(
-			AttributeType1&& p_attribute1,
-			null_attribute&& p_attribute2
-		)
-		{
-			return std::move(p_attribute1);
-		}
-	};
-
-	template <typename AttributeType1, typename... AttributeTypes2>
-	struct join_attribute_types<AttributeType1, std::tuple<AttributeTypes2...>>
-	{
-		using type = std::tuple<AttributeType1, AttributeTypes2...>;
-
-		static type Create(
-			AttributeType1&& p_attribute1,
-			std::tuple<AttributeTypes2...>&& p_attribute2
-		)
-		{
-			return std::tuple_cat(std::make_tuple(std::move(p_attribute1)), std::move(p_attribute2));
-		}
-	};
-
-	template <typename... AttributeTypes1, typename AttributeType2>
-	struct join_attribute_types<std::tuple<AttributeTypes1...>, AttributeType2>
-	{
-		using type = std::tuple<AttributeTypes1..., AttributeType2>;
-
-		static type Create(
-			std::tuple<AttributeTypes1...>&& p_attribute1,
-			AttributeType2&& p_attribute2
-		)
-		{
-			return std::tuple_cat(std::move(p_attribute1), std::make_tuple(std::move(p_attribute2)));
-		}
-	};
-
-	template <typename... AttributeTypes1, typename... AttributeTypes2>
-	struct join_attribute_types<std::tuple<AttributeTypes1...>, std::tuple<AttributeTypes2...>>
-	{
-		using type = std::tuple<AttributeTypes1..., AttributeTypes2...>;
-
-		static type Create(
-			std::tuple<AttributeTypes1...>&& p_attribute1,
-			std::tuple<AttributeTypes2...>&& p_attribute2
-		)
-		{
-			return std::tuple_cat(std::move(p_attribute1), std::move(p_attribute2));
-		}
-	};
-
 public:
 
 	static_assert(!std::is_reference_v<RootRuleType>);
 
 	template <typename RecursiveType>
-	using attribute_template = typename join_attribute_types<
+	using joiner_template = join_attributes<
 		typename HeadRuleDefinitionType::template attribute_template<RecursiveType>,
 		typename TailRuleDefinitionType::template attribute_template<RecursiveType>
-	>::type;
+	>;
+
+	template <typename RecursiveType>
+	using attribute_template = typename joiner_template<RecursiveType>::type;
 
 	sequence_rule_instance(const HeadRuleDefinitionType& p_ruleHead, const TailRuleDefinitionType& p_ruleTail)
 		: m_ruleHead(p_ruleHead), m_ruleTail(p_ruleTail)
@@ -340,12 +371,11 @@ public:
 	template <typename IteratorType, typename SentinelType>
 	auto parse(const RootRuleType& p_root, const IteratorType& p_iterator, const SentinelType& p_sentinel) const
 	{
+		using attribute_joiner = joiner_template<recursive_type<RootRuleType>>;
+
 		using return_type = std::optional<std::pair<
 			IteratorType,
-			typename join_attribute_types<
-				std::decay_t<decltype(m_ruleHead.parse(p_root, p_iterator, p_sentinel).value().second)>,
-				std::decay_t<decltype(m_ruleTail.parse(p_root, p_iterator, p_sentinel).value().second)>
-			>::type
+			typename attribute_joiner::type
 		>>;
 
 		auto optpairitattrHead = m_ruleHead.parse(p_root, p_iterator, p_sentinel);
@@ -356,10 +386,7 @@ public:
 			{
 				return std::make_optional(std::make_pair(
 					optpairitattrTail.value().first,
-					join_attribute_types<
-						std::decay_t<decltype(optpairitattrHead.value().second)>,
-						std::decay_t<decltype(optpairitattrTail.value().second)>
-					>::Create(
+					attribute_joiner::join(
 						std::move(optpairitattrHead.value().second),
 						std::move(optpairitattrTail.value().second)
 					)
@@ -433,48 +460,6 @@ inline constexpr auto single_rule = [](auto&& p_element)
 	return [element = std::forward<decltype(p_element)>(p_element)](const auto& p_ruleRoot)
 	{
 		return single_rule_instance<std::decay_t<decltype(p_ruleRoot)>, std::decay_t<decltype(p_element)>>(std::move(element));
-	};
-};
-
-template <template<typename> typename AttributeTemplate>
-class recursive_attribute
-{
-public:
-	recursive_attribute(AttributeTemplate<recursive_attribute<AttributeTemplate>>&& p_attribute)
-		: attribute(std::make_unique<AttributeTemplate<recursive_attribute<AttributeTemplate>>>(std::move(p_attribute)))
-	{}
-
-	std::unique_ptr<AttributeTemplate<recursive_attribute<AttributeTemplate>>> attribute;
-};
-
-template <typename RootRuleType>
-class recursive_rule_instance
-{
-public:
-
-	static_assert(!std::is_reference_v<RootRuleType>);
-
-	recursive_rule_instance(const RootRuleType&)
-	{}
-
-	template <typename RecursiveAttributeType>
-	using attribute_template = RecursiveAttributeType;
-
-	template <typename IteratorType, typename SentinelType>
-	auto parse(const RootRuleType& p_root, const IteratorType& p_iterator, const SentinelType& p_sentinel) const
-	{
-		auto optpairitattr = p_root.parse(p_root, p_iterator, p_sentinel);
-		return optpairitattr.has_value() ?
-			std::make_optional(std::make_pair(optpairitattr.value().first, recursive_attribute<typename RootRuleType::template attribute_template>(std::move(optpairitattr.value().second)))) :
-			std::nullopt;
-	}
-};
-
-inline constexpr auto recurse_rule = []()
-{
-	return [](const auto& p_ruleRoot)
-	{
-		return recursive_rule_instance<std::decay_t<decltype(p_ruleRoot)>>(p_ruleRoot);
 	};
 };
 
