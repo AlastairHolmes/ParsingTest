@@ -128,6 +128,8 @@ inline constexpr bool is_null_attribute_v = std::is_same_v<AttributeType, null_a
 
 //----------------------------//
 
+//----------------------------//
+
 template <typename ElementType, typename RootType>
 class any_rule
 {
