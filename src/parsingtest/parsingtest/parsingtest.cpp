@@ -248,7 +248,7 @@ auto sequence_rule<HeadRuleType, TailRuleType, RootType>::parse(const IteratorTy
 }
 
 template <typename HeadRuleDefinitionType, typename TailRuleDefinitionType>
-struct sequence_rule_definition
+struct sequence_rule_definition : base_rule_definition
 {
 	template <typename RootType>
 	constexpr auto create()
@@ -272,6 +272,12 @@ constexpr auto sequence(HeadRuleDefinitionType&& ruleHead, TailRuleDefinitionTyp
 {
 	return sequence_rule_definition<std::decay_t<HeadRuleDefinitionType>, std::decay_t<TailRuleDefinitionType>>{std::forward<HeadRuleDefinitionType>(ruleHead), std::forward<TailRuleDefinitionType>(ruleTail)};
 };
+
+template <typename RuleType1, typename RuleType2, std::enable_if_t<std::is_base_of_v<base_rule_definition, RuleType1>&& std::is_base_of_v<base_rule_definition, RuleType2>, int> = 0>
+constexpr auto operator>>(RuleType1&& p_rule1, RuleType2&& p_rule2)
+{
+	return sequence(std::forward<RuleType1>(p_rule1), std::forward<RuleType2>(p_rule2));
+}
 
 //----------------------------//
 
@@ -504,8 +510,16 @@ auto alternative_rule<RuleType1, RuleType2, RootType>::parse(const IteratorType&
 }
 
 template <typename RuleDefinitionType1, typename RuleDefinitionType2>
-struct alternative_rule_definition
+struct alternative_rule_definition : base_rule_definition
 {
+	alternative_rule_definition(const RuleDefinitionType1& p_rule1, const RuleDefinitionType2& p_rule2)
+		: m_rule1(p_rule1), m_rule2(p_rule2)
+	{}
+
+	alternative_rule_definition(RuleDefinitionType1&& p_rule1, RuleDefinitionType2&& p_rule2)
+		: m_rule1(std::move(p_rule1)), m_rule2(std::move(p_rule2))
+	{}
+
 	template <typename RootType>
 	constexpr auto create()
 	{
@@ -526,8 +540,14 @@ struct alternative_rule_definition
 template <typename RuleDefinitionType1, typename RuleDefinitionType2>
 constexpr auto alternative(RuleDefinitionType1&& rule1, RuleDefinitionType2&& rule2)
 {
-	return alternative_rule_definition<std::decay_t<RuleDefinitionType1>, std::decay_t<RuleDefinitionType2>>{std::forward<RuleDefinitionType1>(rule1), std::forward<RuleDefinitionType2>(rule2)};
+	return alternative_rule_definition<std::decay_t<RuleDefinitionType1>, std::decay_t<RuleDefinitionType2>>(std::forward<RuleDefinitionType1>(rule1), std::forward<RuleDefinitionType2>(rule2));
 };
+
+template <typename RuleType1, typename RuleType2, std::enable_if_t<std::is_base_of_v<base_rule_definition, std::decay_t<RuleType1>> && std::is_base_of_v<base_rule_definition, std::decay_t<RuleType2>>, int> = 0>
+constexpr auto operator|(RuleType1&& p_rule1, RuleType2&& p_rule2)
+{
+	return alternative(std::forward<RuleType1>(p_rule1), std::forward<RuleType2>(p_rule2));
+}
 
 //----------------------------//
 
@@ -548,7 +568,7 @@ public:
 };
 
 template <typename ElementType>
-struct any_rule_definition
+struct any_rule_definition : base_rule_definition
 {
 	template <typename RootType>
 	constexpr auto create()
@@ -591,8 +611,16 @@ private:
 };
 
 template <typename ElementType>
-struct single_rule_definition
+struct single_rule_definition : base_rule_definition
 {
+	single_rule_definition(const ElementType& p_element)
+		: m_element(p_element)
+	{}
+
+	single_rule_definition(ElementType&& p_element)
+		: m_element(std::move(p_element))
+	{}
+
 	template <typename RootType>
 	constexpr auto create()
 	{
@@ -605,7 +633,7 @@ struct single_rule_definition
 template <typename ElementType>
 constexpr auto single(ElementType&& p_element)
 {
-	return single_rule_definition<ElementType>{std::forward<ElementType>(p_element)};
+	return single_rule_definition<ElementType>(std::forward<ElementType>(p_element));
 };
 
 template <template<typename...> typename AttributeTemplate, template<typename...> typename... AttributeTemplates>
@@ -643,7 +671,7 @@ public:
 };
 
 template <std::size_t Index>
-struct recurse_rule_definition
+struct recurse_rule_definition : base_rule_definition
 {
 	template <typename RootType>
 	constexpr recurse_rule<Index, RootType> create()
@@ -726,9 +754,7 @@ bool parse(const RootType& p_root, const IteratorType& p_iterator, const Sentine
 int main()
 {
 	//auto rule = make_rule(sequence_rule(recurse_rule(), recurse_rule()));
-	auto root = make_root(
-		alternative(single('a'), any<char>())
-	);
+	auto root = make_root(single('a') | single('b'));
 	//auto rule = make_rule(single('A'));
 
 	std::string a = "b";
