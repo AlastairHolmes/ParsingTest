@@ -4,129 +4,304 @@
 #include <variant>
 #include <type_traits>
 
-namespace traits
-{
-
-	template <typename Types>
-	struct all_same : std::true_type {};
-
-	template <typename Type>
-	struct all_same<std::tuple<Type>> : std::true_type {};
-
-	template <typename Type1, typename Type2, typename... Types>
-	struct all_same<std::tuple<Type1, Type2, Types...>> :
-		std::bool_constant<
-			std::is_same_v<Type1, Type2> &&
-			all_same<std::tuple<Type1, Types...>>::value
-		>
-	{};
-
-	template <typename Types>
-	inline constexpr bool all_same_v = all_same<Types>::value;
-
-	//----------------------------//
-
-	template <typename Type, typename Types>
-	struct contains : std::false_type {};
-
-	template <typename Type>
-	struct contains<Type, std::tuple<>> : std::false_type {};
-
-	template <typename Type, typename Type1, typename... Types>
-	struct contains<Type, std::tuple<Type1, Types...>> :
-		std::bool_constant<
-			std::is_same_v<Type, Type1> ||
-			contains<Type, std::tuple<Types...>>
-		>
-	{};
-
-	template <typename Type, typename Types>
-	inline constexpr bool contains_v = contains<Type, Types>::value;
-
-	//----------------------------//
-
-	template <typename Type, typename Types>
-	struct filter
-	{
-		using type = std::tuple<>;
-	};
-
-	template <typename Type, typename Types>
-	using filter_t = typename filter<Type, Types>::type;
-
-	template <typename Type, typename... Types>
-	struct filter<Type, std::tuple<Type, Types...>>
-	{
-		using type = typename filter<Type, std::tuple<Types...>>::type;
-	};
-
-	template <typename Type, typename Type1, typename... Types>
-	struct filter<Type, std::tuple<Type1, Types...>>
-	{
-		using type = std::conditional_t <
-			std::is_same_v<Type, Type1>,
-			filter_t<Type, std::tuple<Types...>>,
-			decltype(
-				std::tuple_cat(
-					std::declval<std::tuple<Type1>>(),
-					std::declval<filter_t<Type, std::tuple<Types...>>>()
-				)
-			)
-		>;		
-	};
-
-	//----------------------------//
-
-	template <typename Types>
-	struct unique
-	{
-		using type = std::tuple<>;
-	};
-
-	template <typename Types>
-	using unique_t = typename unique<Types>::type;
-
-	template <typename Type, typename... Types>
-	struct unique<std::tuple<Type, Types...>>
-	{
-		using type = decltype(std::tuple_cat(
-			std::declval<std::tuple<Type>>(),
-			std::declval<unique_t<filter_t<Type, std::tuple<Types...>>>>()
-		));
-	};
-
-	//----------------------------//
-
-	template <typename Tuple>
-	struct variant;
-
-	template <typename... Types>
-	struct variant<std::tuple<Types...>>
-	{
-		using type = std::variant<Types...>;
-	};
-
-	template <typename Tuple>
-	using variant_t = typename variant<Tuple>::type;
-
-	//----------------------------//
-
-	template <typename Type>
-	struct identity
-	{
-		using type = Type;
-	};
-
-}
-
-//----------------------------//
-
 struct null_attribute {};
 
 template <typename AttributeType>
 inline constexpr bool is_null_attribute_v = std::is_same_v<AttributeType, null_attribute>;
 
+template <typename RuleType, typename IteratorType, typename SentinelType, typename RootType>
+using parse_result_t = decltype(std::declval<RuleType>().parse(std::declval<IteratorType>(), std::declval<SentinelType>(), std::declval<RootType>()));
+
+template <typename RuleType, typename IteratorType, typename SentinelType, typename RootType>
+using parse_attribute_t = decltype(std::declval<parse_result_t<RuleType, IteratorType, SentinelType, RootType>>().value().second);
+
 //----------------------------//
+
+template <typename RuleType1, typename RuleType2, typename RootType>
+class alternative_rule
+{
+private:
+
+	static_assert(
+		!std::is_reference_v<RuleType1> && !std::is_const_v<RuleType1> &&
+		!std::is_reference_v<RuleType2> && !std::is_const_v<RuleType2> &&
+		!std::is_reference_v<RootType> && !std::is_const_v<RootType>
+	);
+
+	template <typename AttributeType1, typename AttributeType2>
+	constexpr auto internal_make_attribute1(AttributeType1&& p_attribute1) const;
+
+	template <typename AttributeType1, typename AttributeType2>
+	constexpr auto internal_make_attribute2(AttributeType2&& p_attribute2) const;
+
+public:
+
+	alternative_rule(const RuleType1& p_rule1, const RuleType2& p_rule2)
+		: m_rule1(p_rule1), m_rule2(p_rule2)
+	{}
+
+	alternative_rule(RuleType1&& p_rule1, RuleType2&& p_rule2)
+		: m_rule1(std::move(p_rule1)), m_rule2(std::move(p_rule2))
+	{}
+
+	template <typename... RuleAttributeTypes>
+	using attribute_template =
+		decltype(internal_make_attribute(
+			std::move(std::declval<typename RuleType1::template attribute_template<RuleAttributeTypes...>>()),
+			std::move(std::declval<typename RuleType2::template attribute_template<RuleAttributeTypes...>>())
+		));
+
+	template <typename IteratorType, typename SentinelType>
+	auto parse(const IteratorType& p_iterator, const SentinelType& p_sentinel, const RootType& p_root) const;
+
+private:
+
+	RuleType1 m_rule1;
+	RuleType2 m_rule2;
+};
+
+template <typename RuleType>
+struct is_alternative_rule : std::false_type {};
+
+template <typename RuleType1, typename RuleType2, typename RootType>
+struct is_alternative_rule<alternative_rule<RuleType1, RuleType2, RootType>> : std::true_type {};
+
+template <typename RuleType>
+inline constexpr bool is_alternative_rule_v = is_alternative_rule<RuleType>::value;
+
+template <typename RuleType>
+struct is_variant : std::false_type {};
+
+template <typename... Types>
+struct is_variant<std::variant<Types...>> : std::true_type {};
+
+template <typename Type>
+inline constexpr bool is_variant_v = is_variant<Type>::value;
+
+template <typename RuleType1, typename RuleType2, typename RootType>
+template <typename AttributeType1, typename AttributeType2>
+constexpr auto alternative_rule<RuleType1, RuleType2, RootType>::internal_make_attribute1(AttributeType1&& p_attribute1) const
+{
+	p_attribute1;
+	using attribute1_t = std::decay_t<AttributeType1>;
+	using attribute2_t = std::decay_t<AttributeType2>;
+	if constexpr (is_null_attribute_v<attribute1_t>)
+	{
+		return std::move(p_attribute1);
+	}
+	else if constexpr (is_null_attribute_v<attribute2_t>)
+	{
+		return std::move(p_attribute2);
+	}
+	else if constexpr (is_alternative_rule_v<RuleType1> && is_variant_v<attribute1_t> && is_alternative_rule_v<RuleType2> && is_variant_v<attribute2_t>)
+	{
+		return std::tuple_cat(std::move(p_head_attribute), std::move(p_tail_attribute));
+	}
+	else if constexpr (is_alternative_rule_v<RuleType1> && is_variant_v<attribute1_t>)
+	{
+		return std::tuple_cat(std::move(p_head_attribute), std::make_tuple(std::move(p_tail_attribute)));
+	}
+	else if constexpr (is_alternative_rule_v<RuleType2> && is_variant_v<attribute2_t>)
+	{
+		return std::tuple_cat(std::make_tuple(std::move(p_head_attribute)), std::move(p_tail_attribute));
+	}
+	else
+	{
+		return std::make_tuple(std::move(p_head_attribute), std::move(p_tail_attribute));
+	}
+};
+
+template <typename HeadRuleType, typename TailRuleType, typename RootType>
+template <typename IteratorType, typename SentinelType>
+auto sequence_rule<HeadRuleType, TailRuleType, RootType>::parse(const IteratorType& p_iterator, const SentinelType& p_sentinel, const RootType& p_root) const
+{
+	using head_attribute_t = parse_attribute_t<HeadRuleType, IteratorType, SentinelType, RootType>;
+	using tail_attribute_t = parse_attribute_t<TailRuleType, IteratorType, SentinelType, RootType>;
+
+	if (auto optpairitattrHead = m_ruleHead.parse(p_iterator, p_sentinel, p_root); optpairitattrHead.has_value())
+	{
+		if (auto optpairitattrTail = m_ruleTail.parse(optpairitattrHead.value().first, p_sentinel, p_root); optpairitattrTail.has_value())
+		{
+			return std::make_optional(std::make_pair(
+				optpairitattrTail.value().first,
+				internal_make_attribute(
+					std::move(optpairitattrHead.value().second),
+					std::move(optpairitattrTail.value().second)
+				)
+			));
+		}
+	}
+	return std::optional<std::pair<IteratorType, decltype(internal_make_attribute(std::move(std::declval<head_attribute_t>()), std::move(std::declval<tail_attribute_t>())))>>{std::nullopt};
+}
+
+template <typename RuleDefinitionType1, typename RuleDefinitionType2>
+struct alternative_rule_definition
+{
+	template <typename RootType>
+	constexpr auto create()
+	{
+		return alternative_rule<
+			decltype(m_rule1.create<RootType>()),
+			decltype(m_rule2.create<RootType>()),
+			RootType
+		>(
+			m_rule1.create<RootType>(),
+			m_rule2.create<RootType>()
+		);
+	}
+
+	RuleDefinitionType1 m_rule1;
+	RuleDefinitionType2 m_rule2;
+};
+
+template <typename RuleDefinitionType1, typename RuleDefinitionType2>
+constexpr auto alternative(RuleDefinitionType1&& rule1, RuleDefinitionType2&& rule2)
+{
+	return alternative_rule_definition<std::decay_t<RuleDefinitionType1>, std::decay_t<RuleDefinitionType2>>{std::forward<RuleDefinitionType1>(rule1), std::forward<RuleDefinitionType2>(rule2)};
+};
+
+//----------------------------//
+
+template <typename HeadRuleType, typename TailRuleType, typename RootType>
+class sequence_rule
+{
+private:
+
+	static_assert(
+		!std::is_reference_v<HeadRuleType> && !std::is_const_v<HeadRuleType> &&
+		!std::is_reference_v<TailRuleType> && !std::is_const_v<TailRuleType> &&
+		!std::is_reference_v<RootType> && !std::is_const_v<RootType>
+	);
+
+	template <typename HeadAttributeType, typename TailAttributeType>
+	constexpr auto internal_make_attribute(HeadAttributeType&& p_head_attribute, TailAttributeType&& p_tail_attribute) const;
+
+public:
+
+	sequence_rule(const HeadRuleType& p_ruleHead, const TailRuleType& p_ruleTail)
+		: m_ruleHead(p_ruleHead), m_ruleTail(p_ruleTail)
+	{}
+
+	sequence_rule(HeadRuleType&& p_ruleHead, TailRuleType&& p_ruleTail)
+		: m_ruleHead(std::move(p_ruleHead)), m_ruleTail(std::move(p_ruleTail))
+	{}
+
+	template <typename... RuleAttributeTypes>
+	using attribute_template =
+		decltype(internal_make_attribute(
+			std::move(std::declval<typename HeadRuleType::template attribute_template<RuleAttributeTypes...>>()),
+			std::move(std::declval<typename TailRuleType::template attribute_template<RuleAttributeTypes...>>())
+		));
+
+	template <typename IteratorType, typename SentinelType>
+	auto parse(const IteratorType& p_iterator, const SentinelType& p_sentinel, const RootType& p_root) const;
+
+private:
+
+	HeadRuleType m_ruleHead;
+	TailRuleType m_ruleTail;
+};
+
+template <typename RuleType>
+struct is_sequence_rule : std::false_type {};
+
+template <typename HeadRuleType, typename TailRuleType, typename RootType>
+struct is_sequence_rule<sequence_rule<HeadRuleType, TailRuleType, RootType>> : std::true_type {};
+
+template <typename RuleType>
+inline constexpr bool is_sequence_rule_v = is_sequence_rule<RuleType>::value;
+
+template <typename RuleType>
+struct is_tuple : std::false_type {};
+
+template <typename... Types>
+struct is_tuple<std::tuple<Types...>> : std::true_type {};
+
+template <typename Type>
+inline constexpr bool is_tuple_v = is_tuple<Type>::value;
+
+template <typename HeadRuleType, typename TailRuleType, typename RootType>
+template <typename HeadAttributeType, typename TailAttributeType>
+constexpr auto sequence_rule<HeadRuleType, TailRuleType, RootType>::internal_make_attribute(HeadAttributeType&& p_head_attribute, TailAttributeType&& p_tail_attribute) const
+{
+	p_head_attribute;
+	p_tail_attribute;
+	using head_attribute_t = std::decay_t<HeadAttributeType>;
+	using tail_attribute_t = std::decay_t<TailAttributeType>;
+	if constexpr (is_null_attribute_v<head_attribute_t>)
+	{
+		return std::move(p_tail_attribute);
+	}
+	else if constexpr (is_null_attribute_v<tail_attribute_t>)
+	{
+		return std::move(p_head_attribute);
+	}
+	else if constexpr (is_sequence_rule_v<HeadRuleType> && is_tuple_v<head_attribute_t> && is_sequence_rule_v<TailRuleType> && is_tuple_v<tail_attribute_t>)
+	{
+		return std::tuple_cat(std::move(p_head_attribute), std::move(p_tail_attribute));
+	}
+	else if constexpr (is_sequence_rule_v<HeadRuleType> && is_tuple_v<head_attribute_t>)
+	{
+		return std::tuple_cat(std::move(p_head_attribute), std::make_tuple(std::move(p_tail_attribute)));
+	}
+	else if constexpr (is_sequence_rule_v<TailRuleType> && is_tuple_v<tail_attribute_t>)
+	{
+		return std::tuple_cat(std::make_tuple(std::move(p_head_attribute)), std::move(p_tail_attribute));
+	}
+	else
+	{
+		return std::make_tuple(std::move(p_head_attribute), std::move(p_tail_attribute));
+	}
+};
+
+template <typename HeadRuleType, typename TailRuleType, typename RootType>
+template <typename IteratorType, typename SentinelType>
+auto sequence_rule<HeadRuleType, TailRuleType, RootType>::parse(const IteratorType& p_iterator, const SentinelType& p_sentinel, const RootType& p_root) const
+{
+	using head_attribute_t = parse_attribute_t<HeadRuleType, IteratorType, SentinelType, RootType>;
+	using tail_attribute_t = parse_attribute_t<TailRuleType, IteratorType, SentinelType, RootType>;
+
+	if (auto optpairitattrHead = m_ruleHead.parse(p_iterator, p_sentinel, p_root); optpairitattrHead.has_value())
+	{
+		if (auto optpairitattrTail = m_ruleTail.parse(optpairitattrHead.value().first, p_sentinel, p_root); optpairitattrTail.has_value())
+		{
+			return std::make_optional(std::make_pair(
+				optpairitattrTail.value().first,
+				internal_make_attribute(
+					std::move(optpairitattrHead.value().second),
+					std::move(optpairitattrTail.value().second)
+				)
+			));
+		}
+	}
+	return std::optional<std::pair<IteratorType, decltype(internal_make_attribute(std::move(std::declval<head_attribute_t>()), std::move(std::declval<tail_attribute_t>())))>>{std::nullopt};
+}
+
+template <typename HeadRuleDefinitionType, typename TailRuleDefinitionType>
+struct sequence_rule_definition
+{
+	template <typename RootType>
+	constexpr auto create()
+	{
+		return sequence_rule<
+			decltype(m_ruleHead.create<RootType>()),
+			decltype(m_ruleTail.create<RootType>()),
+			RootType
+		>(
+			m_ruleHead.create<RootType>(),
+			m_ruleTail.create<RootType>()
+		);
+	}
+
+	HeadRuleDefinitionType m_ruleHead;
+	TailRuleDefinitionType m_ruleTail;
+};
+
+template <typename HeadRuleDefinitionType, typename TailRuleDefinitionType>
+constexpr auto sequence(HeadRuleDefinitionType&& ruleHead, TailRuleDefinitionType&& ruleTail)
+{
+	return sequence_rule_definition<std::decay_t<HeadRuleDefinitionType>, std::decay_t<TailRuleDefinitionType>>{std::forward<HeadRuleDefinitionType>(ruleHead), std::forward<TailRuleDefinitionType>(ruleTail)};
+};
 
 //----------------------------//
 
@@ -311,7 +486,7 @@ private:
 };
 
 template <typename... RuleDefinitionTypes>
-auto make_rule(RuleDefinitionTypes&&... p_rule_definitions)
+auto make_root(RuleDefinitionTypes&&... p_rule_definitions)
 {
 	return root<RuleDefinitionTypes...>(std::forward<RuleDefinitionTypes>(p_rule_definitions)...);
 }
@@ -325,17 +500,16 @@ bool parse(const RootType& p_root, const IteratorType& p_iterator, const Sentine
 int main()
 {
 	//auto rule = make_rule(sequence_rule(recurse_rule(), recurse_rule()));
-	auto rule = make_rule(
-		recurse<1>(),
-		single('a')
+	auto root = make_root(
+		sequence(single('a'), single('b'))
 	);
 	//auto rule = make_rule(single('A'));
 
 	std::string a = "hello";
 	std::string b = "ab";
 
-	std::cout << parse(rule, std::begin(a), std::end(a)) << std::endl;
-	//std::cout << parse(rule, std::begin(b), std::end(b)) << std::endl;
+	std::cout << parse(root, std::begin(a), std::end(a)) << std::endl;
+	std::cout << parse(root, std::begin(b), std::end(b)) << std::endl;
 
 	std::cin >> a;
 	return 0;
