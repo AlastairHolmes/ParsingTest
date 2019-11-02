@@ -5,7 +5,6 @@
 #include <type_traits>
 
 struct base_rule_definition {};
-
 struct null_attribute {};
 
 template <typename AttributeType>
@@ -107,8 +106,8 @@ struct contains<Type, std::tuple<>> : std::false_type {};
 template <typename Type, typename Type1, typename... Types>
 struct contains<Type, std::tuple<Type1, Types...>> :
 	std::bool_constant<
-	std::is_same_v<Type, Type1> ||
-	contains<Type, std::tuple<Types...>>
+		std::is_same_v<Type, Type1> ||
+		contains<Type, std::tuple<Types...>>
 	>
 {};
 
