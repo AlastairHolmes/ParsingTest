@@ -250,6 +250,14 @@ auto sequence_rule<HeadRuleType, TailRuleType, RootType>::parse(const IteratorTy
 template <typename HeadRuleDefinitionType, typename TailRuleDefinitionType>
 struct sequence_rule_definition : base_rule_definition
 {
+	sequence_rule_definition(const HeadRuleDefinitionType& p_rule1, const TailRuleDefinitionType& p_rule2)
+		: m_ruleHead(p_rule1), m_ruleTail(p_rule2)
+	{}
+
+	sequence_rule_definition(HeadRuleDefinitionType&& p_rule1, TailRuleDefinitionType&& p_rule2)
+		: m_ruleHead(std::move(p_rule1)), m_ruleTail(std::move(p_rule2))
+	{}
+
 	template <typename RootType>
 	constexpr auto create()
 	{
@@ -270,7 +278,7 @@ struct sequence_rule_definition : base_rule_definition
 template <typename HeadRuleDefinitionType, typename TailRuleDefinitionType>
 constexpr auto sequence(HeadRuleDefinitionType&& ruleHead, TailRuleDefinitionType&& ruleTail)
 {
-	return sequence_rule_definition<std::decay_t<HeadRuleDefinitionType>, std::decay_t<TailRuleDefinitionType>>{std::forward<HeadRuleDefinitionType>(ruleHead), std::forward<TailRuleDefinitionType>(ruleTail)};
+	return sequence_rule_definition<std::decay_t<HeadRuleDefinitionType>, std::decay_t<TailRuleDefinitionType>>(std::forward<HeadRuleDefinitionType>(ruleHead), std::forward<TailRuleDefinitionType>(ruleTail));
 };
 
 template <typename RuleType1, typename RuleType2, std::enable_if_t<std::is_base_of_v<base_rule_definition, RuleType1>&& std::is_base_of_v<base_rule_definition, RuleType2>, int> = 0>
@@ -683,7 +691,7 @@ struct recurse_rule_definition : base_rule_definition
 template <std::size_t Index>
 constexpr recurse_rule_definition<Index> recurse()
 {
-	return recurse_rule_definition<Index>{};
+	return recurse_rule_definition<Index>();
 };
 
 //----------------------------//
@@ -754,12 +762,15 @@ bool parse(const RootType& p_root, const IteratorType& p_iterator, const Sentine
 int main()
 {
 	//auto rule = make_rule(sequence_rule(recurse_rule(), recurse_rule()));
-	auto root = make_root(single('a') | single('b'));
+	auto root = make_root(
+		recurse<1>() >> recurse<0>(),
+		single('{')
+	);
 	//auto rule = make_rule(single('A'));
 
 	std::string a = "b";
 	std::string b = "a";
-	std::string c = "c";
+	std::string c = "{a}";
 	std::cout << parse(root, std::begin(a), std::end(a)) << std::endl;
 	std::cout << parse(root, std::begin(b), std::end(b)) << std::endl;
 	std::cout << parse(root, std::begin(c), std::end(c)) << std::endl;
