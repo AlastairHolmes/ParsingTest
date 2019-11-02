@@ -133,6 +133,62 @@ inline constexpr bool equivalent_v = equivalent<Tuple1, Tuple2>::value;
 //----------------------------//
 
 template <typename HeadRuleType, typename TailRuleType, typename RootType>
+class sequence_rule_2
+{
+private:
+
+	static_assert(
+		!std::is_reference_v<HeadRuleType> && !std::is_const_v<HeadRuleType> &&
+		!std::is_reference_v<TailRuleType> && !std::is_const_v<TailRuleType> &&
+		!std::is_reference_v<RootType> && !std::is_const_v<RootType>
+	);
+
+public:
+
+	sequence_rule_2(const HeadRuleType& p_ruleHead, const TailRuleType& p_ruleTail)
+		: m_ruleHead(p_ruleHead), m_ruleTail(p_ruleTail)
+	{}
+
+	sequence_rule_2(HeadRuleType&& p_ruleHead, TailRuleType&& p_ruleTail)
+		: m_ruleHead(std::move(p_ruleHead)), m_ruleTail(std::move(p_ruleTail))
+	{}
+
+	template <typename... RuleAttributeTypes>
+	using attribute_template =
+		std::tuple<
+			typename HeadRuleType::template attribute_template<RuleAttributeTypes...>,
+			typename TailRuleType::template attribute_template<RuleAttributeTypes...>
+		>;
+
+	template <typename IteratorType, typename SentinelType>
+	auto parse(const IteratorType& p_iterator, const SentinelType& p_sentinel, const RootType& p_root) const
+	{
+		using head_attribute_t = parse_attribute_t<HeadRuleType, IteratorType, SentinelType, RootType>;
+		using tail_attribute_t = parse_attribute_t<TailRuleType, IteratorType, SentinelType, RootType>;
+
+		if (auto optpairitattrHead = m_ruleHead.parse(p_iterator, p_sentinel, p_root); optpairitattrHead.has_value())
+		{
+			if (auto optpairitattrTail = m_ruleTail.parse(optpairitattrHead.value().first, p_sentinel, p_root); optpairitattrTail.has_value())
+			{
+				return std::make_optional(std::make_pair(
+					optpairitattrTail.value().first,
+					std::make_tuple(
+						std::move(optpairitattrHead.value().second),
+						std::move(optpairitattrTail.value().second)
+					)
+				));
+			}
+		}
+		return std::optional<std::pair<IteratorType, std::tuple<head_attribute_t, tail_attribute_t>>>{std::nullopt};
+	}
+
+private:
+
+	HeadRuleType m_ruleHead;
+	TailRuleType m_ruleTail;
+};
+
+template <typename HeadRuleType, typename TailRuleType, typename RootType>
 class sequence_rule
 {
 private:
@@ -259,9 +315,16 @@ struct sequence_rule_definition : base_rule_definition
 	{}
 
 	template <typename RootType>
+	using rule_template = sequence_rule_2<
+		typename HeadRuleDefinitionType::template rule_template<RootType>,
+		typename TailRuleDefinitionType::template rule_template<RootType>,
+		RootType
+	>;
+
+	template <typename RootType>
 	constexpr auto create()
 	{
-		return sequence_rule<
+		return sequence_rule_2<
 			decltype(m_ruleHead.create<RootType>()),
 			decltype(m_ruleTail.create<RootType>()),
 			RootType
@@ -529,6 +592,9 @@ struct alternative_rule_definition : base_rule_definition
 	{}
 
 	template <typename RootType>
+	using rule_template = alternative_rule<typename RuleDefinitionType1::template rule_template<RootType>, typename RuleDefinitionType2::template rule_template<RootType>, RootType>;
+
+	template <typename RootType>
 	constexpr auto create()
 	{
 		return alternative_rule<
@@ -578,6 +644,10 @@ public:
 template <typename ElementType>
 struct any_rule_definition : base_rule_definition
 {
+
+	template <typename RootType>
+	using rule_template = any_rule<ElementType, RootType>;
+
 	template <typename RootType>
 	constexpr auto create()
 	{
@@ -628,6 +698,9 @@ struct single_rule_definition : base_rule_definition
 	single_rule_definition(ElementType&& p_element)
 		: m_element(std::move(p_element))
 	{}
+
+	template <typename RootType>
+	using rule_template = single_rule<ElementType, RootType>;
 
 	template <typename RootType>
 	constexpr auto create()
@@ -682,6 +755,9 @@ template <std::size_t Index>
 struct recurse_rule_definition : base_rule_definition
 {
 	template <typename RootType>
+	using rule_template = recurse_rule<Index, RootType>;
+
+	template <typename RootType>
 	constexpr recurse_rule<Index, RootType> create()
 	{
 		return recurse_rule<Index, RootType>();
@@ -702,7 +778,7 @@ struct root
 public:
 
 	template <typename RuleDefinitionType>
-	using rule_type = decltype(std::declval<RuleDefinitionType>().create<root<RuleDefinitionTypes...>>());
+	using rule_type = typename RuleDefinitionType::template rule_template<root<RuleDefinitionTypes...>>;
 
 	template <std::size_t RuleIndex>
 	struct rule_traits
@@ -763,17 +839,16 @@ int main()
 {
 	//auto rule = make_rule(sequence_rule(recurse_rule(), recurse_rule()));
 	auto root = make_root(
-		recurse<1>() >> recurse<0>(),
-		single('{')
+		single('A') >> recurse<0>()
 	);
 	//auto rule = make_rule(single('A'));
 
 	std::string a = "b";
 	std::string b = "a";
 	std::string c = "{a}";
-	std::cout << parse(root, std::begin(a), std::end(a)) << std::endl;
-	std::cout << parse(root, std::begin(b), std::end(b)) << std::endl;
-	std::cout << parse(root, std::begin(c), std::end(c)) << std::endl;
+	//std::cout << parse(root, std::begin(a), std::end(a)) << std::endl;
+	//std::cout << parse(root, std::begin(b), std::end(b)) << std::endl;
+	//std::cout << parse(root, std::begin(c), std::end(c)) << std::endl;
 	std::cin >> a;
 	return 0;
 }
