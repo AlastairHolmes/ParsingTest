@@ -130,7 +130,7 @@ int main()
 {
 	//auto rule = make_rule(sequence_rule(recurse_rule(), recurse_rule()));
 	auto root = make_root(
-		single('{') >> single('}') >> recurse<0>()
+		single('}') >> recurse<0>()
 	);
 	//auto rule = make_rule(single('A'));
 

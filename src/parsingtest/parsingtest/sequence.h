@@ -57,7 +57,7 @@ namespace utilities
 		);
 
 		template <typename HeadAttributeType, typename TailAttributeType>
-		struct attribute_type
+		struct sequence_attribute_type
 		{
 		private:
 			static constexpr auto internal_make_attribute_type(utilities::identity<HeadAttributeType> p_head_attribute, utilities::identity<TailAttributeType> p_tail_attribute)
@@ -149,7 +149,7 @@ namespace utilities
 
 		template <typename... RuleAttributeTypes>
 		using attribute_template =
-			typename attribute_type<
+			typename sequence_attribute_type<
 				head_attribute_template<RuleAttributeTypes...>,
 				tail_attribute_template<RuleAttributeTypes...>
 			>::type;
@@ -157,13 +157,13 @@ namespace utilities
 		template <typename IteratorType, typename SentinelType>
 		std::optional<std::pair<IteratorType, utilities::attribute_type_t<RootType, attribute_template>>> parse(const IteratorType& p_iterator, const SentinelType& p_sentinel, const RootType& p_root) const
 		{
-			using head_attribute_t = utilities::parse_attribute_t<HeadRuleType, IteratorType, SentinelType, RootType>;
-			using tail_attribute_t = utilities::parse_attribute_t<TailRuleType, IteratorType, SentinelType, RootType>;
+			using head_attribute_t = utilities::attribute_type_t<RootType, typename HeadRuleType::template attribute_template>;
+			using tail_attribute_t = utilities::attribute_type_t<RootType, typename TailRuleType::template attribute_template>;
 			if (auto optpairitattrHead = m_ruleHead.parse(p_iterator, p_sentinel, p_root); optpairitattrHead.has_value())
 			{
 				if (auto optpairitattrTail = m_ruleTail.parse(optpairitattrHead.value().first, p_sentinel, p_root); optpairitattrTail.has_value())
 				{
-					return std::make_pair(optpairitattrTail.value().first, attribute_type<head_attribute_t, tail_attribute_t>::make(std::move(optpairitattrHead.value().second), std::move(optpairitattrTail.value().second)));
+					return std::make_pair(optpairitattrTail.value().first, sequence_attribute_type<head_attribute_t, tail_attribute_t>::make(std::move(optpairitattrHead.value().second), std::move(optpairitattrTail.value().second)));
 				}
 			}
 			return std::nullopt;
