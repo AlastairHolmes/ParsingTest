@@ -157,8 +157,8 @@ namespace utilities
 		template <typename IteratorType, typename SentinelType>
 		std::optional<std::pair<IteratorType, utilities::attribute_type_t<RootType, attribute_template>>> parse(const IteratorType& p_iterator, const SentinelType& p_sentinel, const RootType& p_root) const
 		{
-			using head_attribute_t = utilities::attribute_type_t<RootType, typename HeadRuleType::template attribute_template>;
-			using tail_attribute_t = utilities::attribute_type_t<RootType, typename TailRuleType::template attribute_template>;
+			using head_attribute_t = utilities::attribute_type_t<RootType, typename HeadRuleType::attribute_template>;
+			using tail_attribute_t = utilities::attribute_type_t<RootType, typename TailRuleType::attribute_template>;
 			if (auto optpairitattrHead = m_ruleHead.parse(p_iterator, p_sentinel, p_root); optpairitattrHead.has_value())
 			{
 				if (auto optpairitattrTail = m_ruleTail.parse(optpairitattrHead.value().first, p_sentinel, p_root); optpairitattrTail.has_value())

@@ -8,6 +8,8 @@
 #include <parsingtest/sequence.h>
 #include <parsingtest/root.h>
 #include <parsingtest/single.h>
+#include <parsingtest/any.h>
+
 
 //----------------------------//
 
@@ -130,7 +132,7 @@ int main()
 {
 	//auto rule = make_rule(sequence_rule(recurse_rule(), recurse_rule()));
 	auto root = make_root(
-		single('}') >> recurse<0>()
+		any<char>() >> recurse<0>()
 	);
 	//auto rule = make_rule(single('A'));
 
