@@ -9,4 +9,11 @@ endif()
 target_include_directories(parsingtest PRIVATE "${CMAKE_CURRENT_LIST_DIR}/..")
 target_sources(parsingtest PRIVATE
 	"${CMAKE_CURRENT_LIST_DIR}/parsingtest.cpp"
+	"${CMAKE_CURRENT_LIST_DIR}/sequence.h"
+	"${CMAKE_CURRENT_LIST_DIR}/utilities.h"
+	"${CMAKE_CURRENT_LIST_DIR}/type_traits.h"
+	"${CMAKE_CURRENT_LIST_DIR}/recurse.h"
+	"${CMAKE_CURRENT_LIST_DIR}/root.h"
+	"${CMAKE_CURRENT_LIST_DIR}/any.h"
+	"${CMAKE_CURRENT_LIST_DIR}/single.h"
 )
